@@ -65,7 +65,19 @@ The automated tests cover DEMO and stubbed pey responses. They do not run agains
 
 ## Other MCP clients
 
-Any MCP client that can start a stdio process works the same way: run the binary (or your wrapper) with the environment below. These two examples follow each client's MCP docs but have not been tested by us yet.
+Any MCP client that can start a stdio process works the same way: run the binary (or your wrapper) with the environment below.
+
+### Tested clients
+
+Checked on 16 Nov 2026 on Linux, in `DEMO`, with a real `create_codi_charge` then `get_charge_status` call through the client (both returned `DEMO_ONLY`):
+
+| Client | Version | Result | Note |
+|---|---|---|---|
+| Claude Code | 2.1.326 | works | `claude mcp add` as above, or `--mcp-config` |
+| Codex CLI | 0.163.0 | works | Codex asks before running an MCP tool. With approvals off (`codex exec`), the call fails unless you set `default_tools_approval_mode = "approve"` under `[mcp_servers.payvro]`. |
+| Cursor CLI (`cursor-agent`) | 2026.11.13 | works | Approve the server once: `cursor-agent mcp enable payvro` |
+| Claude Desktop, Cursor (editor), GitHub Copilot, others | | not tested | Same stdio standard; should work. Reports welcome. |
+
 
 **Codex CLI** (`~/.codex/config.toml`):
 
@@ -75,7 +87,7 @@ command = "/absolute/path/to/payvro-mcp"
 env = { PAYVRO_MCP_MODE = "DIRECT", PAYVRO_MODE = "DEMO", PAYVRO_MAX_AMOUNT_CENTAVOS = "50000", PEY_API_KEY_ID = "demo-account" }
 ```
 
-**Cursor and other JSON-configured clients** (`mcp.json`):
+**Cursor and other JSON-configured clients** (`.cursor/mcp.json` or the client's `mcp.json`):
 
 ```json
 {
@@ -115,7 +127,7 @@ The agent cannot pass keys, account IDs, hosts, currency, mode, destinations or 
 | `PEY_API_KEY` | LIVE only | Your pey API key. Read from the environment only; not written to tool results or the journal, and redacted from stdout/stderr (see limits in `SECURITY.md`). |
 | `PAYVRO_PUBLIC_ORIGIN` | LIVE links | HTTPS origin where pey sends the buyer back (`/payment/return`). |
 | `PEY_BANK_ACCOUNT_ID` | optional | Destination account for QR charges, if your pey account requires one. |
-| `PAYVRO_DIRECT_JOURNAL` | optional | Path to the journal file (`.jsonl`). Defaults to your user config directory. |
+| `PAYVRO_DIRECT_JOURNAL` | optional | Path to the journal file (`.jsonl`). Defaults to your user config directory. Point it at a directory that does not exist yet (the server creates it private, `0700`) or one only you can write: a group- or world-writable directory makes charges fail closed. |
 
 ## Safety model, in short
 
