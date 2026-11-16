@@ -2,11 +2,11 @@
 
 A small [Model Context Protocol](https://modelcontextprotocol.io) server that lets an AI agent **create and check CoDi charges** in Mexico through the [pey API](https://docs.pey.mx), using **your own pey account and keys**.
 
-It runs locally over stdio: your MCP client (Claude Code, Codex, Cursor, …) starts the binary, and the binary talks only to `https://api.pey.mx`.
+It runs locally over stdio: your MCP client (Claude Code, Codex, Cursor, …) starts the binary, and in `DIRECT` mode the binary talks only to `https://api.pey.mx`.
 
 - Two tools: `create_codi_charge` and `get_charge_status`.
 - Amounts are integer centavos, always under a cap you set.
-- A local journal makes retries safe: the same `idempotencyKey` never creates a second charge.
+- A local journal records each attempt: the same `idempotencyKey` reuses the local result on retry, and an uncertain outcome needs manual review. It is not exactly-once at pey.
 - `DEMO` mode runs fully offline and never contacts pey, so you can try it without an account.
 
 > PAYVRO MCP is an independent open-source project. It is **not affiliated with, endorsed by, or supported by pey**. You need your own pey account, and you are responsible for the charges you create with it.
@@ -99,7 +99,7 @@ For LIVE, point `command` at your wrapper script rather than putting the key in 
 
 | Tool | Input | What it does |
 |---|---|---|
-| `create_codi_charge` | `amountCentavos` (integer, 1 to your cap), `concept` (1 to 100 chars), `method` (`qr` or `link`), `idempotencyKey` (16 to 128 chars, `[A-Za-z0-9_-]`) | Creates a CoDi QR or a pey payment link. The tool asks the agent to confirm amount and concept with a human first. Calling it again with the same key and the same intent returns the stored result; the same key with a different intent is rejected. |
+| `create_codi_charge` | `amountCentavos` (integer, 1 to your cap), `concept` (1 to 100 chars), `method` (`qr` or `link`), `idempotencyKey` (16 to 128 chars, `[A-Za-z0-9_-]`) | Creates a CoDi QR or a pey payment link. The tool asks the agent to confirm amount and concept with a human first. Calling it again with the same key and the same intent reuses the local result (or reports `UNCERTAIN` if the first outcome was unknown); the same key with a different intent is rejected. |
 | `get_charge_status` | `idempotencyKey` (the one used to create) | Read-only. Looks up the charge in pey with authenticated GETs and returns the provider state (for example `PENDING`, `PAID`, `EXPIRED`), or `NEEDS_REVIEW`, `UNCERTAIN` or `DEMO_ONLY`. `PAID` requires the amounts, currency and transaction identities to match exactly; anything inconsistent becomes `NEEDS_REVIEW`. |
 
 The agent cannot pass keys, account IDs, hosts, currency, mode, destinations or payment status: extra arguments are rejected by the schema.
@@ -112,7 +112,7 @@ The agent cannot pass keys, account IDs, hosts, currency, mode, destinations or 
 | `PAYVRO_MODE` | yes | `DEMO` (offline) or `LIVE` |
 | `PAYVRO_MAX_AMOUNT_CENTAVOS` | yes | Maximum amount per charge, in centavos. Missing or invalid values make the tools fail. |
 | `PEY_API_KEY_ID` | yes | Your pey key ID. Also scopes the local journal to that account. |
-| `PEY_API_KEY` | LIVE only | Your pey API key. Read from the environment only; never logged, returned or journaled. |
+| `PEY_API_KEY` | LIVE only | Your pey API key. Read from the environment only; not written to tool results or the journal, and redacted from stdout/stderr (see limits in `SECURITY.md`). |
 | `PAYVRO_PUBLIC_ORIGIN` | LIVE links | HTTPS origin where pey sends the buyer back (`/payment/return`). |
 | `PEY_BANK_ACCOUNT_ID` | optional | Destination account for QR charges, if your pey account requires one. |
 | `PAYVRO_DIRECT_JOURNAL` | optional | Path to the journal file (`.jsonl`). Defaults to your user config directory. |
@@ -121,9 +121,9 @@ The agent cannot pass keys, account IDs, hosts, currency, mode, destinations or 
 
 - **Fixed host.** The pey host is compiled in. No base URL, redirect target or callback can be supplied at runtime.
 - **Cap.** Every charge must be at or below `PAYVRO_MAX_AMOUNT_CENTAVOS`.
-- **No blind retries.** A journal entry is written before every POST. If a POST's outcome is unknown, the charge becomes `UNCERTAIN` and is never retried automatically: check it in your pey dashboard. Do not delete the journal to "fix" it.
+- **No blind retries.** A journal entry is written before every POST. If a POST's outcome is unknown, the charge becomes `UNCERTAIN` and the server does not retry it: check it in your pey dashboard. Do not delete the journal to "fix" it. The journal prevents duplicate attempts from this machine; it is not exactly-once at pey.
 - **Leak checks on the concept.** Concepts that look like a token, an API key, a JWT or a long card/CLABE-style number are rejected before anything is sent. This is a heuristic, not full PII detection.
-- **Redaction.** Configured secrets are redacted from stdout and stderr.
+- **Redaction.** Configured secrets are redacted from stdout and stderr, including panics on the main goroutine. A panic in another goroutine is not covered.
 - **Human confirmation is conversational.** The tool asks the agent to confirm with a person. That helps, but it is not cryptographic consent and does not stop prompt injection on its own. The cap is your real limit.
 
 Details and the test that covers each guard: [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md).
