@@ -1,0 +1,121 @@
+title = "payvro-mcp secret scan (gitleaks defaults + payment-specific rules)"
+[extend]
+useDefault = true
+
+[[rules]]
+id = "payvro-sk-live"
+regex = '''sk_live_[A-Za-z0-9_]*'''
+[[rules]]
+id = "payvro-sk-test"
+regex = '''sk_test_[A-Za-z0-9_]*'''
+[[rules]]
+id = "payvro-pk-live"
+regex = '''pk_live_[A-Za-z0-9_]*'''
+[[rules]]
+id = "payvro-pk-test"
+regex = '''pk_test_[A-Za-z0-9_]*'''
+[[rules]]
+id = "payvro-bearer"
+regex = '''Bearer [A-Za-z0-9._-]{20,}'''
+[[rules]]
+id = "payvro-jwt"
+regex = '''eyJ[A-Za-z0-9_-]{10,}\.'''
+[[rules]]
+id = "payvro-pem"
+regex = '''-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|PUBLIC KEY|CERTIFICATE)-----|\bPEM\b'''
+[[rules]]
+id = "payvro-clabe"
+regex = '''\b[0-9]{18}\b'''
+[[rules]]
+id = "payvro-pey-assignment"
+regex = '''PEY_API_KEY=[^\s"'`]*'''
+[[allowlists]]
+description = "FIXTURE: generic-api-key matches on synthetic idempotency ids in client tests; not live credentials."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^internal/client/client_test\.go$''']
+regexes = ['''^idem-key-1234567$''']
+
+[[allowlists]]
+description = "FIXTURE: tools tests keep required Bearer/JWT/sk leak-prevention canaries and synthetic idempotency ids; not live secrets."
+targetRules = ["generic-api-key", "payvro-bearer", "jwt", "payvro-jwt"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^internal/tools/tools_test\.go$''']
+regexes = [
+  '''^idem-key-1234567$''',
+  '''^direct-invalid-amount-001$''',
+  '''^direct-missing-cap-001$''',
+  '''^Bearer payvro-token-0123456789$''',
+  '''^eyJhbGciOiJIUzI1NiJ9\.$''',
+  '''^eyJzdWIiOiJzeW50aGV0aWMifQ\.$''',
+  '''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiJzeW50aGV0aWMifQ\.signature1234567890$''',
+]
+
+[[allowlists]]
+description = "FIXTURE: generic-api-key matches on synthetic idempotency ids in redaction tests."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^cmd/payvro-mcp/redaction_test\.go$''']
+regexes = [
+  '''^idem-key-1234567$''',
+  '''^idem-key-12345678$''',
+]
+
+[[allowlists]]
+description = "FIXTURE: generic-api-key match on the obvious redaction canary; not a live PAT."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^internal/redact/writer_test\.go$''']
+regexes = ['''^pv5canaryPAT9f3e2a7b1$''']
+
+[[allowlists]]
+description = "FIXTURE: handshake tests must keep Bearer canaries that prove concepts are rejected; env assignment uses a synthetic key name prefix."
+targetRules = ["payvro-bearer", "payvro-pey-assignment"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^cmd/payvro-mcp/handshake_test\.go$''']
+regexes = [
+  '''^Bearer payvro-token-0123456789$''',
+  '''^PEY_API_KEY=$''',
+]
+
+[[allowlists]]
+description = "FALSE-POSITIVE: portable tests concatenate the PEY_API_KEY environment name with a synthetic canary; not a live pey credential."
+targetRules = ["payvro-pey-assignment"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^cmd/payvro-mcp/portable_test\.go$''']
+regexes = ['''^PEY_API_KEY=$''']
+
+[[allowlists]]
+description = "FIXTURE: direct tests must keep Bearer/JWT canaries that prove leak-prevention heuristics fail closed."
+targetRules = ["payvro-bearer", "jwt", "payvro-jwt"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^internal/direct/direct_test\.go$''']
+regexes = [
+  '''^Bearer payvro-token-0123456789$''',
+  '''^eyJhbGciOiJIUzI1NiJ9\.$''',
+  '''^eyJzdWIiOiJzeW50aGV0aWMifQ\.$''',
+  '''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiJzeW50aGV0aWMifQ\.signature1234567890$''',
+]
+
+[[allowlists]]
+description = "FIXTURE: caller-route tests assert that a synthetic Bearer canary is rejected; not a live token."
+targetRules = ["payvro-bearer", "generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^internal/tools/caller_routes_test\.go$''']
+regexes = ['''^Bearer payvro-token-0123456789$''']
+
+[[allowlists]]
+description = "DOCS: environment variable names and key prefixes mentioned in documentation; no values."
+targetRules = ["payvro-pey-assignment", "payvro-sk-live", "payvro-sk-test", "payvro-pk-live", "payvro-pk-test"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^(README|SECURITY)\.md$''', '''^docs/[A-Z_]+\.md$''']
+regexes = ['''^PEY_API_KEY=$''', '''^(sk|pk)_(live|test)_$''']
